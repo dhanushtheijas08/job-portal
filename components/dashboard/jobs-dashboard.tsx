@@ -1,10 +1,12 @@
 "use client"
 
+import * as React from "react"
 import {
   BellIcon,
   BriefcaseIcon,
   CalendarIcon,
   ExternalLinkIcon,
+  PencilIcon,
   PlusIcon,
 } from "lucide-react"
 import Link from "next/link"
@@ -12,6 +14,8 @@ import Link from "next/link"
 import { JobStatusBadge } from "@/components/dashboard/job-status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { JobDetailDialogContent } from "@/components/dashboard/job-detail-dialog"
+import { Dialog } from "@/components/ui/dialog"
 import { useAuthSession } from "@/hooks/use-auth-session"
 import { useJobsQuery } from "@/hooks/use-jobs-query"
 import type { JobRow } from "@/lib/jobs/constants"
@@ -51,89 +55,124 @@ function JobsListSkeleton() {
 }
 
 function JobCard({ job }: { job: JobRow }) {
+  const [open, setOpen] = React.useState(false)
   const applied = formatStoredJobDate(job.applied_at)
   const followUp = formatStoredJobDate(job.reminder_at)
   const showMetaStrip = Boolean(applied) || Boolean(followUp)
 
   return (
-    <li
-      className={cn(
-        "flex h-full min-h-0 flex-col rounded-xl border border-border/80 bg-card shadow-xs ring-1 ring-foreground/4",
-        "transition-[border-color,box-shadow,background-color] duration-150",
-        "hover:border-border hover:bg-muted/20 hover:shadow-md hover:ring-foreground/7",
-        "focus-within:border-primary/35 focus-within:bg-muted/15 focus-within:shadow-md focus-within:ring-primary/15"
-      )}
-    >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
-        <div className="min-w-0 space-y-1.5">
-          <h2 className="line-clamp-2 font-heading text-base leading-snug font-semibold tracking-tight text-foreground">
-            {job.job_title}
-          </h2>
-          <p className="truncate text-sm text-muted-foreground">
-            {job.company_name}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <JobStatusBadge status={String(job.status)} />
-          <Badge
-            variant="outline"
-            className="font-normal text-muted-foreground"
-          >
-            {jobSiteLabel(String(job.site))}
-          </Badge>
-        </div>
-
-        {showMetaStrip ? (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
-            {applied ? (
-              <div
-                className="flex min-w-0 max-w-[min(100%,12rem)] items-center gap-1.5 sm:max-w-none"
-                aria-label={`Applied ${applied}`}
-              >
-                <CalendarIcon
-                  className="size-3.5 shrink-0 opacity-75"
-                  aria-hidden
-                />
-                <span className="min-w-0 truncate tabular-nums">{applied}</span>
-              </div>
-            ) : null}
-            {followUp ? (
-              <div
-                className="flex min-w-0 max-w-[min(100%,12rem)] items-center gap-1.5 sm:max-w-none"
-                aria-label={`Follow-up ${followUp}`}
-              >
-                <BellIcon
-                  className="size-3.5 shrink-0 opacity-75"
-                  aria-hidden
-                />
-                <span className="min-w-0 truncate tabular-nums">{followUp}</span>
-              </div>
-            ) : null}
+    <Dialog open={open} onOpenChange={setOpen}>
+      <li
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        role="button"
+        tabIndex={0}
+        className={cn(
+          "flex h-full min-h-0 cursor-pointer flex-col rounded-xl border border-border/80 bg-card shadow-xs ring-1 ring-foreground/4",
+          "transition-[border-color,box-shadow,background-color] duration-150",
+          "hover:border-border hover:bg-muted/20 hover:shadow-md hover:ring-foreground/7",
+          "focus-visible:border-primary/35 focus-visible:bg-muted/15 focus-visible:shadow-md focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none",
+          open && "border-primary/25 bg-muted/15 ring-primary/10"
+        )}
+        onClick={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+          <div className="min-w-0 space-y-1.5">
+            <h2 className="line-clamp-2 font-heading text-base leading-snug font-semibold tracking-tight text-foreground">
+              {job.job_title}
+            </h2>
+            <p className="truncate text-sm text-muted-foreground">
+              {job.company_name}
+            </p>
           </div>
-        ) : null}
 
-        <div className="mt-auto flex flex-col gap-2 pt-1">
-          {job.job_url ? (
-            <Button
+          <div className="flex flex-wrap items-center gap-2">
+            <JobStatusBadge status={String(job.status)} />
+            <Badge
               variant="outline"
+              className="font-normal text-muted-foreground"
+            >
+              {jobSiteLabel(String(job.site))}
+            </Badge>
+          </div>
+
+          {showMetaStrip ? (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
+              {applied ? (
+                <div
+                  className="flex max-w-[min(100%,12rem)] min-w-0 items-center gap-1.5 sm:max-w-none"
+                  aria-label={`Applied ${applied}`}
+                >
+                  <CalendarIcon
+                    className="size-3.5 shrink-0 opacity-75"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 truncate tabular-nums">
+                    {applied}
+                  </span>
+                </div>
+              ) : null}
+              {followUp ? (
+                <div
+                  className="flex max-w-[min(100%,12rem)] min-w-0 items-center gap-1.5 sm:max-w-none"
+                  aria-label={`Follow-up ${followUp}`}
+                >
+                  <BellIcon
+                    className="size-3.5 shrink-0 opacity-75"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 truncate tabular-nums">
+                    {followUp}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div
+            className="mt-auto flex flex-col gap-2 pt-1"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <Button
+              variant="secondary"
               size="sm"
               className="w-full justify-center gap-2"
               asChild
             >
-              <a href={job.job_url} target="_blank" rel="noreferrer">
-                <ExternalLinkIcon className="size-4 shrink-0" aria-hidden />
-                Open listing
-              </a>
+              <Link href={`/jobs/${job.id}/edit`}>
+                <PencilIcon className="size-4 shrink-0" aria-hidden />
+                Edit tracking
+              </Link>
             </Button>
-          ) : (
-            <span className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-3 py-2 text-center text-xs leading-snug text-muted-foreground">
-              No posting link saved
-            </span>
-          )}
+            {job.job_url ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-center gap-2"
+                asChild
+              >
+                <a href={job.job_url} target="_blank" rel="noreferrer">
+                  <ExternalLinkIcon className="size-4 shrink-0" aria-hidden />
+                  Open listing
+                </a>
+              </Button>
+            ) : (
+              <span className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-3 py-2 text-center text-xs leading-snug text-muted-foreground">
+                No posting link saved
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-    </li>
+      </li>
+      <JobDetailDialogContent job={job} open={open} />
+    </Dialog>
   )
 }
 

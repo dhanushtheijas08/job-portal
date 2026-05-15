@@ -3,7 +3,12 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
-import { BriefcaseIcon, LayoutDashboardIcon, PlusCircleIcon } from "lucide-react"
+import {
+  BriefcaseIcon,
+  LayoutDashboardIcon,
+  PlusCircleIcon,
+  SettingsIcon,
+} from "lucide-react"
 
 import { useAuthSession } from "@/hooks/use-auth-session"
 import { cn } from "@/lib/utils"
@@ -73,6 +78,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             >
               <PlusCircleIcon className="size-4" aria-hidden />
               Track new job
+            </Link>
+            <Link
+              href="/settings"
+              className={navLinkClass(pathname === "/settings")}
+              aria-current={pathname === "/settings" ? "page" : undefined}
+            >
+              <SettingsIcon className="size-4" aria-hidden />
+              Settings
             </Link>
           </nav>
         </div>

@@ -75,3 +75,54 @@ export type JobRow = {
   created_at: string
   updated_at: string
 }
+
+/** `attachments` row — schema.doc (job / lead / attempt scoped). */
+export type AttachmentRow = {
+  id: string
+  job_id: string | null
+  lead_id: string | null
+  attempt_id: string | null
+  file_url: string
+  file_name: string | null
+  content_type: string | null
+  uploaded_at: string
+  user_id: string
+}
+
+/** `lead_attempts` row (+ nested attachments when selected). */
+export type LeadAttemptRow = {
+  id: string
+  lead_id: string
+  attempt_no: number
+  message_text: string | null
+  sent_at: string
+  reminder_at: string | null
+  response_received: boolean
+  notes: string | null
+  created_at: string
+  user_id: string
+  lead_status: LeadStatus | string
+  attachments?: AttachmentRow[]
+}
+
+/** `job_leads` row (+ nested attempts when selected). */
+export type JobLeadRow = {
+  id: string
+  job_id: string
+  name: string
+  role: string | null
+  linkedin_url: string | null
+  profile_url: string | null
+  email: string | null
+  status: LeadStatus | string
+  created_at: string
+  updated_at: string
+  user_id: string
+  lead_attempts?: LeadAttemptRow[]
+}
+
+/** Single job plus related rows from `/unused/schema.md`. */
+export type JobDetailRow = JobRow & {
+  job_leads: JobLeadRow[]
+  attachments: AttachmentRow[]
+}

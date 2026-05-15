@@ -12,10 +12,10 @@ import {
 } from "@/lib/jobs/job-form-schema"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { uploadAttachmentFile } from "@/lib/supabase/upload-job-attachment"
+import { normalizeResumeEntriesFromDb } from "@/lib/users/profile-schema"
 
 export type CreateJobWithFilesInput = {
   values: JobFormValues
-  /** Parallel to each `job_leads[i].attempts[j]` optional file */
   attemptAttachments: (File | null)[][]
 }
 
@@ -79,6 +79,27 @@ export function useCreateJobMutation(userId: string | undefined) {
       }
 
       const supabase = getSupabaseBrowserClient()
+
+      const resumeUrl = emptyToUndefined(values.resume_url)
+      if (resumeUrl) {
+        const { data: userRow, error: userResumesError } = await supabase
+          .from("users")
+          .select("resumes")
+          .eq("id", userId)
+          .single()
+        if (userResumesError) throw userResumesError
+        const allowed = new Set(
+          normalizeResumeEntriesFromDb(userRow?.resumes).map((r) =>
+            r.url.trim()
+          )
+        )
+        if (!allowed.has(resumeUrl)) {
+          throw new Error(
+            "Choose a resume from your profile (Settings), or leave the field empty."
+          )
+        }
+      }
+
       const jobPayload = toJobInsertPayload(values, userId)
 
       const { data: jobRow, error: jobError } = await supabase
@@ -163,6 +184,7 @@ export function useCreateJobMutation(userId: string | undefined) {
     onSuccess: () => {
       if (userId) {
         void queryClient.invalidateQueries({ queryKey: ["jobs", userId] })
+        void queryClient.invalidateQueries({ queryKey: ["job-detail", userId] })
       }
     },
   })

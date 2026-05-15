@@ -4,9 +4,10 @@ import {
   JOB_SITES,
   JOB_STATUSES,
   LEAD_STATUSES,
+  type JobDetailRow,
   type LeadStatus,
 } from "@/lib/jobs/constants"
-import { todayYmd } from "@/lib/jobs/dates"
+import { formatYmdFromDate, todayYmd } from "@/lib/jobs/dates"
 
 const siteValues = JOB_SITES.map((s) => s.value) as [string, ...string[]]
 const statusValues = JOB_STATUSES.map((s) => s.value) as [string, ...string[]]
@@ -34,6 +35,7 @@ function isHttpUrl(value: string) {
 
 /** One saved row in `lead_attempts` per filled attempt (within a contact). */
 export const leadAttemptFormSchema = z.object({
+  id: z.string().optional(),
   /** Maps to `lead_attempts.message_text`. */
   message_text: z.string().max(8000),
   notes: z.string().max(8000),
@@ -46,6 +48,7 @@ export type LeadAttemptFormValues = z.infer<typeof leadAttemptFormSchema>
 
 /** One saved row in `job_leads` when `contact_name` is filled. */
 export const jobLeadFormSchema = z.object({
+  id: z.string().optional(),
   contact_name: z.string().max(200),
   role: z.string().max(200),
   linkedin_url: z.string().max(2000),
@@ -59,6 +62,7 @@ export type JobLeadFormValues = z.infer<typeof jobLeadFormSchema>
 
 export function emptyLeadAttemptForm(): LeadAttemptFormValues {
   return {
+    id: undefined,
     message_text: "",
     notes: "",
     reminder_at: "",
@@ -68,6 +72,7 @@ export function emptyLeadAttemptForm(): LeadAttemptFormValues {
 
 export function emptyJobLeadForm(): JobLeadFormValues {
   return {
+    id: undefined,
     contact_name: "",
     role: "",
     linkedin_url: "",
@@ -78,8 +83,8 @@ export function emptyJobLeadForm(): JobLeadFormValues {
 export function attemptHasOutboundContent(att: LeadAttemptFormValues): boolean {
   return Boolean(
     emptyToUndefined(att.message_text) ||
-      emptyToUndefined(att.notes) ||
-      emptyToUndefined(att.reminder_at)
+    emptyToUndefined(att.notes) ||
+    emptyToUndefined(att.reminder_at)
   )
 }
 
@@ -97,6 +102,7 @@ export const jobFormSchema = z
     referred_by_profile_url: z.string().max(2000).optional(),
     location: z.string().max(200).optional(),
     notes: z.string().max(8000).optional(),
+    resume_url: z.string().max(4000).optional(),
     job_leads: z.array(jobLeadFormSchema).max(MAX_JOB_LEADS),
   })
   .superRefine((data, ctx) => {
@@ -106,6 +112,14 @@ export const jobFormSchema = z
         code: "custom",
         path: ["job_url"],
         message: "Enter a valid URL",
+      })
+    }
+    const resumeUrl = emptyToUndefined(data.resume_url)
+    if (resumeUrl && !isHttpUrl(resumeUrl)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["resume_url"],
+        message: "Choose a valid resume from the list.",
       })
     }
     const refUrl = emptyToUndefined(data.referred_by_profile_url)
@@ -128,7 +142,7 @@ export const jobFormSchema = z
       }
 
       const leadName = emptyToUndefined(lead.contact_name)
-      lead.attempts.forEach((att, ai) => {
+      lead.attempts.forEach((att) => {
         if (!attemptHasOutboundContent(att)) return
         if (!leadName) {
           ctx.addIssue({
@@ -158,7 +172,55 @@ export function getJobFormDefaults(): JobFormValues {
     referred_by_profile_url: "",
     location: "",
     notes: "",
+    resume_url: "",
     job_leads: [emptyJobLeadForm()],
+  }
+}
+
+function storedDateToYmd(raw: string | null | undefined): string {
+  const value = raw?.trim()
+  if (!value) return ""
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10)
+
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return ""
+  return formatYmdFromDate(new Date(timestamp))
+}
+
+export function jobDetailToFormValues(job: JobDetailRow): JobFormValues {
+  const leads = job.job_leads.map((lead) => {
+    const attempts = (lead.lead_attempts ?? []).map((attempt) => ({
+      id: attempt.id,
+      message_text: attempt.message_text ?? "",
+      notes: attempt.notes ?? "",
+      reminder_at: storedDateToYmd(attempt.reminder_at),
+      lead_status: String(attempt.lead_status) as LeadStatus,
+    }))
+
+    return {
+      id: lead.id,
+      contact_name: lead.name ?? "",
+      role: lead.role ?? "",
+      linkedin_url: lead.linkedin_url ?? "",
+      attempts: attempts.length ? attempts : [emptyLeadAttemptForm()],
+    }
+  })
+
+  return {
+    job_title: job.job_title ?? "",
+    company_name: job.company_name ?? "",
+    job_url: job.job_url ?? "",
+    site: String(job.site),
+    status: String(job.status),
+    applied_at: storedDateToYmd(job.applied_at),
+    reminder_at: storedDateToYmd(job.reminder_at),
+    is_referred: Boolean(job.is_referred),
+    referred_by_name: job.referred_by_name ?? "",
+    referred_by_profile_url: job.referred_by_profile_url ?? "",
+    location: job.location ?? "",
+    notes: job.notes ?? "",
+    resume_url: job.resume_url ?? "",
+    job_leads: leads.length ? leads : [emptyJobLeadForm()],
   }
 }
 
@@ -197,5 +259,6 @@ export function toJobInsertPayload(values: JobFormValues, userId: string) {
       emptyToUndefined(values.referred_by_profile_url) ?? null,
     location: emptyToUndefined(values.location) ?? null,
     notes: emptyToUndefined(values.notes) ?? null,
+    resume_url: emptyToUndefined(values.resume_url) ?? null,
   }
 }

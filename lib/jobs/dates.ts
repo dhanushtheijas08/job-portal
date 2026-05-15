@@ -53,3 +53,18 @@ export function formatStoredJobDate(
     new Date(t)
   )
 }
+
+/** Full timestamps such as `created_at` / `updated_at` from Postgres. */
+export function formatStoredTimestamp(
+  raw: string | null | undefined
+): string | null {
+  if (raw == null) return null
+  const s = String(raw).trim()
+  if (!s) return null
+  const t = Date.parse(s)
+  if (Number.isNaN(t)) return null
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(t))
+}

@@ -3,7 +3,8 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useCallback, useState } from "react"
+import Link from "next/link"
+import { useCallback, useMemo, useState } from "react"
 import { Controller, useForm, useWatch, type FieldPath } from "react-hook-form"
 
 import { JobLeadsStepFields } from "@/components/dashboard/job-leads-step-fields"
@@ -31,10 +32,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { useAuthSession } from "@/hooks/use-auth-session"
 import { useCreateJobMutation } from "@/hooks/use-create-job-mutation"
+import { useUpdateJobMutation } from "@/hooks/use-update-job-mutation"
+import { useUserProfileQuery } from "@/hooks/use-user-profile-query"
 import { JOB_SITES, JOB_STATUSES } from "@/lib/jobs/constants"
 import { formatYmdFromDate, parseYmdToLocalDate } from "@/lib/jobs/dates"
 import {
@@ -42,6 +44,7 @@ import {
   jobFormSchema,
   type JobFormValues,
 } from "@/lib/jobs/job-form-schema"
+import { sortResumesByLastUsedDesc } from "@/lib/users/profile-schema"
 import { cn } from "@/lib/utils"
 
 const STEP_TITLES = ["Application", "Outreach & referral"] as const
@@ -56,12 +59,24 @@ const STEP_FIELDS: FieldPath<JobFormValues>[][] = [
     "applied_at",
     "reminder_at",
     "site",
+    "resume_url",
     "notes",
   ],
   ["job_leads", "is_referred", "referred_by_name", "referred_by_profile_url"],
 ]
 
 const LAST_STEP = STEP_TITLES.length - 1
+
+const NO_JOB_RESUME_VALUE = "__none__"
+
+type JobFormMode = "create" | "edit"
+
+type NewJobFormProps = {
+  mode?: JobFormMode
+  jobId?: string
+  initialValues?: JobFormValues
+  initialStep?: number
+}
 
 function RequiredMark() {
   return (
@@ -77,18 +92,39 @@ function formatAppliedDisplay(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(d)
 }
 
-export function NewJobForm() {
+export function NewJobForm({
+  mode = "create",
+  jobId,
+  initialValues,
+  initialStep = 0,
+}: NewJobFormProps = {}) {
   const router = useRouter()
   const { data: session } = useAuthSession()
   const userId = session?.user.id
-  const [step, setStep] = useState(0)
+  const { data: profile, isPending: profileResumesLoading } =
+    useUserProfileQuery(userId)
+
+  const sortedProfileResumes = useMemo(
+    () =>
+      sortResumesByLastUsedDesc(profile?.resumes ?? []).filter((r) =>
+        r.url.trim()
+      ),
+    [profile?.resumes]
+  )
+
+  const formDefaults = useMemo(
+    () => initialValues ?? getJobFormDefaults(),
+    [initialValues]
+  )
+
+  const [step, setStep] = useState(() =>
+    Math.min(Math.max(initialStep, 0), LAST_STEP)
+  )
   const [appliedOpen, setAppliedOpen] = useState(false)
   const [reminderOpen, setReminderOpen] = useState(false)
   const [attemptAttachments, setAttemptAttachments] = useState<
     (File | null)[][]
-  >(() =>
-    getJobFormDefaults().job_leads.map((lead) => lead.attempts.map(() => null))
-  )
+  >(() => formDefaults.job_leads.map((lead) => lead.attempts.map(() => null)))
 
   const patchAttemptFile = useCallback(
     (leadIndex: number, attemptIndex: number, file: File | null) => {
@@ -144,12 +180,13 @@ export function NewJobForm() {
     formState: { isSubmitting },
   } = useForm<JobFormValues>({
     resolver: zodResolver(jobFormSchema),
-    defaultValues: getJobFormDefaults(),
+    defaultValues: formDefaults,
   })
 
   const isReferred = useWatch({ control, name: "is_referred" })
-  const { mutateAsync, isPending, isError, error } =
-    useCreateJobMutation(userId)
+  const createMutation = useCreateJobMutation(userId)
+  const updateMutation = useUpdateJobMutation(userId, jobId)
+  const activeMutation = mode === "edit" ? updateMutation : createMutation
 
   async function goNext() {
     clearErrors()
@@ -181,16 +218,19 @@ export function NewJobForm() {
       }
     }
 
-    await mutateAsync({
-      values,
-      attemptAttachments,
-    })
+    await activeMutation
+      .mutateAsync({
+        values,
+        attemptAttachments,
+      })
       .then(() => {
-        const nextDefaults = getJobFormDefaults()
-        resetForm(nextDefaults)
-        setAttemptAttachments(
-          nextDefaults.job_leads.map((lead) => lead.attempts.map(() => null))
-        )
+        if (mode === "create") {
+          const nextDefaults = getJobFormDefaults()
+          resetForm(nextDefaults)
+          setAttemptAttachments(
+            nextDefaults.job_leads.map((lead) => lead.attempts.map(() => null))
+          )
+        }
         setStep(0)
         router.push("/")
         router.refresh()
@@ -200,19 +240,27 @@ export function NewJobForm() {
       })
   }
 
-  const busy = isSubmitting || isPending
-  const formError = isError && error instanceof Error ? error.message : null
+  const busy = isSubmitting || activeMutation.isPending
+  const formError =
+    activeMutation.isError && activeMutation.error instanceof Error
+      ? activeMutation.error.message
+      : null
+  const formTitle = mode === "edit" ? "Edit job tracking" : "Track a new job"
+  const formDescription =
+    mode === "edit"
+      ? "Update the application details, referral context, contacts, and outreach attempts from one clean workspace."
+      : "Two steps: log the application on the job, then add one or more contacts and as many outreach attempts as you need—plus referral info when it applies."
+  const saveLabel = mode === "edit" ? "Update application" : "Save application"
+  const savingLabel = mode === "edit" ? "Updating…" : "Saving…"
 
   return (
     <div className="mx-auto w-full max-w-3xl">
       <header className="mb-4 space-y-2">
         <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
-          Track a new job
+          {formTitle}
         </h1>
         <p className="max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-          Two steps: log the application on the job, then add one or more
-          contacts and as many outreach attempts as you need—plus referral info
-          when it applies.
+          {formDescription}
         </p>
       </header>
 
@@ -561,6 +609,70 @@ export function NewJobForm() {
                 />
               </div>
               <Controller
+                name="resume_url"
+                control={control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="job-resume-select">Resume</FieldLabel>
+                    <FieldContent>
+                      {sortedProfileResumes.length === 0 &&
+                      !profileResumesLoading ? (
+                        <p
+                          id="job-resume-select"
+                          className="text-sm leading-relaxed text-muted-foreground"
+                        >
+                          Upload at least one resume in{" "}
+                          <Link
+                            href="/settings"
+                            className="font-medium text-foreground underline-offset-4 hover:underline"
+                          >
+                            Settings
+                          </Link>{" "}
+                          to attach it here. We store its URL on the job row.
+                        </p>
+                      ) : (
+                        <Select
+                          value={
+                            field.value?.trim()
+                              ? field.value
+                              : NO_JOB_RESUME_VALUE
+                          }
+                          onValueChange={(v) =>
+                            field.onChange(v === NO_JOB_RESUME_VALUE ? "" : v)
+                          }
+                          disabled={profileResumesLoading}
+                        >
+                          <SelectTrigger
+                            id="job-resume-select"
+                            className="w-full"
+                            aria-invalid={fieldState.invalid}
+                          >
+                            <SelectValue
+                              placeholder={
+                                profileResumesLoading
+                                  ? "Loading resumes…"
+                                  : "Choose a resume (most recently used first)"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NO_JOB_RESUME_VALUE}>
+                              None
+                            </SelectItem>
+                            {sortedProfileResumes.map((r) => (
+                              <SelectItem key={r.id} value={r.url.trim()}>
+                                {r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <FieldError errors={[fieldState.error]} />
+                    </FieldContent>
+                  </Field>
+                )}
+              />
+              <Controller
                 name="notes"
                 control={control}
                 render={({ field, fieldState }) => (
@@ -712,7 +824,7 @@ export function NewJobForm() {
                 disabled={busy}
                 onClick={() => void handleSubmit(onSubmit)()}
               >
-                {busy ? "Saving…" : "Save application"}
+                {busy ? savingLabel : saveLabel}
               </Button>
             )}
           </div>

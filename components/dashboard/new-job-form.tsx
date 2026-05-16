@@ -246,10 +246,6 @@ export function NewJobForm({
       ? activeMutation.error.message
       : null
   const formTitle = mode === "edit" ? "Edit job tracking" : "Track a new job"
-  const formDescription =
-    mode === "edit"
-      ? "Update the application details, referral context, contacts, and outreach attempts from one clean workspace."
-      : "Two steps: log the application on the job, then add one or more contacts and as many outreach attempts as you need—plus referral info when it applies."
   const saveLabel = mode === "edit" ? "Update application" : "Save application"
   const savingLabel = mode === "edit" ? "Updating…" : "Saving…"
 
@@ -259,9 +255,6 @@ export function NewJobForm({
         <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
           {formTitle}
         </h1>
-        <p className="max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-          {formDescription}
-        </p>
       </header>
 
       <div

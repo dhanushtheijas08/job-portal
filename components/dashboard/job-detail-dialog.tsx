@@ -1027,9 +1027,6 @@ export function JobDetailDialogContent({
                   </span>
                   {merged.location?.trim() ? (
                     <>
-                      <span className="text-border" aria-hidden>
-                        ·
-                      </span>
                       <span className="inline-flex items-center gap-1">
                         <MapPinIcon
                           className="size-3.5 shrink-0 opacity-60"
@@ -1043,7 +1040,7 @@ export function JobDetailDialogContent({
               </div>
             </div>
 
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="flex shrink-0 flex-wrap gap-2 lg:translate-x-2 lg:translate-y-8">
               <Button
                 size="sm"
                 variant="secondary"
@@ -1146,47 +1143,6 @@ export function JobDetailDialogContent({
               )}
             </div>
           </Section>
-
-          {/* Referral */}
-          {showReferralBlock ? (
-            <Section
-              title="Referral"
-              description="How this application was introduced."
-            >
-              <div className="grid gap-3 sm:grid-cols-3">
-                <InfoCell label="Referred">
-                  {merged.is_referred ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <CheckIcon
-                        className="size-3.5 shrink-0 text-foreground/70"
-                        aria-hidden
-                      />
-                      Yes
-                    </span>
-                  ) : (
-                    "No"
-                  )}
-                </InfoCell>
-                <InfoCell label="Referrer">
-                  {merged.referred_by_name?.trim() ? (
-                    merged.referred_by_name
-                  ) : (
-                    <EmptyHint>—</EmptyHint>
-                  )}
-                </InfoCell>
-                <InfoCell label="Referrer profile">
-                  {merged.referred_by_profile_url?.trim() ? (
-                    <OutLink
-                      href={merged.referred_by_profile_url.trim()}
-                      label="Open profile"
-                    />
-                  ) : (
-                    <EmptyHint>—</EmptyHint>
-                  )}
-                </InfoCell>
-              </div>
-            </Section>
-          ) : null}
 
           {/* Job attachments */}
           {jobFiles.length ? (

@@ -1,13 +1,16 @@
 "use client"
 
 import * as React from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BellIcon,
   BriefcaseIcon,
   CalendarIcon,
   ExternalLinkIcon,
+  MoreVerticalIcon,
   PencilIcon,
   PlusIcon,
+  Trash2Icon,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -15,12 +18,25 @@ import { JobStatusBadge } from "@/components/dashboard/job-status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { JobDetailDialogContent } from "@/components/dashboard/job-detail-dialog"
-import { Dialog } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { useAuthSession } from "@/hooks/use-auth-session"
 import { useJobsQuery } from "@/hooks/use-jobs-query"
 import type { JobRow } from "@/lib/jobs/constants"
 import { jobSiteLabel } from "@/lib/jobs/constants"
 import { formatStoredJobDate } from "@/lib/jobs/dates"
+import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 function JobsListSkeleton() {
@@ -54,125 +70,309 @@ function JobsListSkeleton() {
   )
 }
 
+function useDeleteJobMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (job: JobRow) => {
+      const supabase = getSupabaseBrowserClient()
+
+      const { data: leadRows, error: leadsError } = await supabase
+        .from("job_leads")
+        .select("id")
+        .eq("user_id", job.user_id)
+        .eq("job_id", job.id)
+
+      if (leadsError) throw leadsError
+
+      const leadIds = (leadRows ?? []).map((lead) => lead.id as string)
+      const { data: attemptRows, error: attemptsError } = leadIds.length
+        ? await supabase
+            .from("lead_attempts")
+            .select("id")
+            .eq("user_id", job.user_id)
+            .in("lead_id", leadIds)
+        : { data: [], error: null }
+
+      if (attemptsError) throw attemptsError
+
+      const attemptIds = (attemptRows ?? []).map(
+        (attempt) => attempt.id as string
+      )
+
+      const { error: jobAttachmentError } = await supabase
+        .from("attachments")
+        .delete()
+        .eq("user_id", job.user_id)
+        .eq("job_id", job.id)
+
+      if (jobAttachmentError) throw jobAttachmentError
+
+      if (leadIds.length) {
+        const { error: leadAttachmentError } = await supabase
+          .from("attachments")
+          .delete()
+          .eq("user_id", job.user_id)
+          .in("lead_id", leadIds)
+
+        if (leadAttachmentError) throw leadAttachmentError
+      }
+
+      if (attemptIds.length) {
+        const { error: attemptAttachmentError } = await supabase
+          .from("attachments")
+          .delete()
+          .eq("user_id", job.user_id)
+          .in("attempt_id", attemptIds)
+
+        if (attemptAttachmentError) throw attemptAttachmentError
+
+        const { error: attemptDeleteError } = await supabase
+          .from("lead_attempts")
+          .delete()
+          .eq("user_id", job.user_id)
+          .in("id", attemptIds)
+
+        if (attemptDeleteError) throw attemptDeleteError
+      }
+
+      if (leadIds.length) {
+        const { error: leadDeleteError } = await supabase
+          .from("job_leads")
+          .delete()
+          .eq("user_id", job.user_id)
+          .in("id", leadIds)
+
+        if (leadDeleteError) throw leadDeleteError
+      }
+
+      const { error: jobDeleteError } = await supabase
+        .from("jobs")
+        .delete()
+        .eq("user_id", job.user_id)
+        .eq("id", job.id)
+
+      if (jobDeleteError) throw jobDeleteError
+    },
+    onSuccess: (_data, job) => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs", job.user_id] })
+      void queryClient.invalidateQueries({
+        queryKey: ["job-detail", job.user_id, job.id],
+      })
+    },
+  })
+}
+
 function JobCard({ job }: { job: JobRow }) {
   const [open, setOpen] = React.useState(false)
+  const [actionsOpen, setActionsOpen] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const deleteJob = useDeleteJobMutation()
   const applied = formatStoredJobDate(job.applied_at)
   const followUp = formatStoredJobDate(job.reminder_at)
   const showMetaStrip = Boolean(applied) || Boolean(followUp)
 
+  function handleDeleteRequest() {
+    setActionsOpen(false)
+    setDeleteOpen(true)
+  }
+
+  function handleConfirmDelete() {
+    deleteJob.mutate(job, {
+      onSuccess: () => setDeleteOpen(false),
+    })
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <li
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        role="button"
-        tabIndex={0}
-        className={cn(
-          "flex h-full min-h-0 cursor-pointer flex-col rounded-xl border border-border/80 bg-card shadow-xs ring-1 ring-foreground/4",
-          "transition-[border-color,box-shadow,background-color] duration-150",
-          "hover:border-border hover:bg-muted/20 hover:shadow-md hover:ring-foreground/7",
-          "focus-visible:border-primary/35 focus-visible:bg-muted/15 focus-visible:shadow-md focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none",
-          open && "border-primary/25 bg-muted/15 ring-primary/10"
-        )}
-        onClick={() => setOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault()
-            setOpen(true)
-          }
+    <>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <li
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          role="button"
+          tabIndex={0}
+          className={cn(
+            "flex h-full min-h-0 cursor-pointer flex-col rounded-xl border border-border/80 bg-card shadow-xs ring-1 ring-foreground/4",
+            "transition-[border-color,box-shadow,background-color] duration-150",
+            "bg-muted/70 hover:border-border hover:bg-muted/60 hover:shadow-md hover:ring-foreground/7",
+            "focus-visible:border-primary/35 focus-visible:bg-muted/15 focus-visible:shadow-md focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none",
+            open && "border-primary/25 bg-muted/15 ring-primary/10"
+          )}
+          onClick={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              setOpen(true)
+            }
+          }}
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <h2 className="line-clamp-2 font-heading text-base leading-snug font-semibold tracking-tight text-foreground">
+                  {job.job_title}
+                </h2>
+                <p className="truncate text-sm text-muted-foreground">
+                  {job.company_name}
+                </p>
+              </div>
+              <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="-mt-2 -mr-2 text-muted-foreground hover:text-foreground"
+                    aria-label={`Actions for ${job.job_title}`}
+                    aria-expanded={actionsOpen}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <MoreVerticalIcon className="size-4" aria-hidden />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="w-44 gap-1 p-1.5"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    asChild
+                  >
+                    <Link href={`/jobs/${job.id}/edit`}>
+                      <PencilIcon className="size-4" aria-hidden />
+                      Edit
+                    </Link>
+                  </Button>
+                  {job.job_url ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start gap-2"
+                      asChild
+                    >
+                      <a href={job.job_url} target="_blank" rel="noreferrer">
+                        <ExternalLinkIcon className="size-4" aria-hidden />
+                        Open listing
+                      </a>
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-destructive hover:text-destructive"
+                    disabled={deleteJob.isPending}
+                    onClick={handleDeleteRequest}
+                  >
+                    <Trash2Icon className="size-4" aria-hidden />
+                    Delete
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <JobStatusBadge status={String(job.status)} />
+              <Badge
+                variant="outline"
+                className="font-normal text-muted-foreground"
+              >
+                {jobSiteLabel(String(job.site))}
+              </Badge>
+            </div>
+
+            {showMetaStrip ? (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
+                {applied ? (
+                  <div
+                    className="flex max-w-[min(100%,12rem)] min-w-0 items-center gap-1.5 sm:max-w-none"
+                    aria-label={`Applied ${applied}`}
+                  >
+                    <CalendarIcon
+                      className="size-3.5 shrink-0 opacity-75"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 truncate tabular-nums">
+                      {applied}
+                    </span>
+                  </div>
+                ) : null}
+                {followUp ? (
+                  <div
+                    className="flex max-w-[min(100%,12rem)] min-w-0 items-center gap-1.5 sm:max-w-none"
+                    aria-label={`Follow-up ${followUp}`}
+                  >
+                    <BellIcon
+                      className="size-3.5 shrink-0 opacity-75"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 truncate tabular-nums">
+                      {followUp}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {deleteJob.isError ? (
+              <p className="mt-auto rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {deleteJob.error instanceof Error
+                  ? deleteJob.error.message
+                  : "Could not delete this job."}
+              </p>
+            ) : null}
+          </div>
+        </li>
+        <JobDetailDialogContent job={job} open={open} />
+      </Dialog>
+
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(nextOpen) => {
+          if (!deleteJob.isPending) setDeleteOpen(nextOpen)
         }}
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
-          <div className="min-w-0 space-y-1.5">
-            <h2 className="line-clamp-2 font-heading text-base leading-snug font-semibold tracking-tight text-foreground">
-              {job.job_title}
-            </h2>
-            <p className="truncate text-sm text-muted-foreground">
-              {job.company_name}
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete application?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete {job.job_title} at {job.company_name}
+              , including saved outreach and attachments.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteJob.isError ? (
+            <p className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {deleteJob.error instanceof Error
+                ? deleteJob.error.message
+                : "Could not delete this job."}
             </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <JobStatusBadge status={String(job.status)} />
-            <Badge
-              variant="outline"
-              className="font-normal text-muted-foreground"
-            >
-              {jobSiteLabel(String(job.site))}
-            </Badge>
-          </div>
-
-          {showMetaStrip ? (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
-              {applied ? (
-                <div
-                  className="flex max-w-[min(100%,12rem)] min-w-0 items-center gap-1.5 sm:max-w-none"
-                  aria-label={`Applied ${applied}`}
-                >
-                  <CalendarIcon
-                    className="size-3.5 shrink-0 opacity-75"
-                    aria-hidden
-                  />
-                  <span className="min-w-0 truncate tabular-nums">
-                    {applied}
-                  </span>
-                </div>
-              ) : null}
-              {followUp ? (
-                <div
-                  className="flex max-w-[min(100%,12rem)] min-w-0 items-center gap-1.5 sm:max-w-none"
-                  aria-label={`Follow-up ${followUp}`}
-                >
-                  <BellIcon
-                    className="size-3.5 shrink-0 opacity-75"
-                    aria-hidden
-                  />
-                  <span className="min-w-0 truncate tabular-nums">
-                    {followUp}
-                  </span>
-                </div>
-              ) : null}
-            </div>
           ) : null}
-
-          <div
-            className="mt-auto flex flex-col gap-2 pt-1"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
+          <DialogFooter>
             <Button
-              variant="secondary"
-              size="sm"
-              className="w-full justify-center gap-2"
-              asChild
+              type="button"
+              variant="outline"
+              disabled={deleteJob.isPending}
+              onClick={() => setDeleteOpen(false)}
             >
-              <Link href={`/jobs/${job.id}/edit`}>
-                <PencilIcon className="size-4 shrink-0" aria-hidden />
-                Edit tracking
-              </Link>
+              Cancel
             </Button>
-            {job.job_url ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-center gap-2"
-                asChild
-              >
-                <a href={job.job_url} target="_blank" rel="noreferrer">
-                  <ExternalLinkIcon className="size-4 shrink-0" aria-hidden />
-                  Open listing
-                </a>
-              </Button>
-            ) : (
-              <span className="rounded-lg border border-dashed border-border/80 bg-muted/15 px-3 py-2 text-center text-xs leading-snug text-muted-foreground">
-                No posting link saved
-              </span>
-            )}
-          </div>
-        </div>
-      </li>
-      <JobDetailDialogContent job={job} open={open} />
-    </Dialog>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteJob.isPending}
+              onClick={handleConfirmDelete}
+            >
+              {deleteJob.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

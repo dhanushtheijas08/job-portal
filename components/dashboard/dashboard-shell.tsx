@@ -51,11 +51,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             href="/"
             className="flex items-center gap-2 text-foreground no-underline"
           >
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <BriefcaseIcon className="size-4" aria-hidden />
-            </span>
             <div className="leading-tight">
-              <p className="font-heading text-base font-semibold">Job tracker</p>
+              <p className="font-heading text-base font-semibold">
+                Job tracker
+              </p>
               <p className="text-xs text-muted-foreground">
                 Signed in as {session.user.email ?? "your account"}
               </p>

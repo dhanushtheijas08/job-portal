@@ -62,7 +62,7 @@ export function useGoogleOAuthMutation() {
       const supabase = getSupabaseBrowserClient()
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/` },
+        options: { redirectTo: `${process.env.NEXT_PUBLIC_REDIRECT_URI}` },
       })
       if (error) throw error
       return data

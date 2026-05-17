@@ -59,9 +59,7 @@ export function GoogleSignInButton({
         onClick={handleClick}
       >
         <GoogleGlyph className="size-4" />
-        {oauth.isPending
-          ? "Redirecting…"
-          : `${actionLabel} with Google`}
+        {oauth.isPending ? "Redirecting…" : `${actionLabel} with Google`}
       </Button>
       {error ? (
         <p className="text-center text-xs text-destructive" role="alert">
